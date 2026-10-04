@@ -24,12 +24,7 @@ platform_from_sdk() {
     return
   fi
 
-  if [[ "${sdk}" == macosx* ]]; then
-    echo "macos"
-    return
-  fi
-
-  echo "${sdk}"
+  echo ""
 }
 
 build_framework() {
@@ -43,12 +38,15 @@ build_framework() {
     -target "${TARGET_NAME}"
     -configuration "${CONFIGURATION}"
     -sdk "${sdk}"
-    PLATFORM_NAME="${platform}"
     ONLY_ACTIVE_ARCH=NO
     BUILD_DIR="${BUILD_ROOT}"
     SYMROOT="${BUILD_ROOT}/symroot-${sdk}"
     OBJROOT="${BUILD_ROOT}/objroot-${sdk}"
   )
+
+  if [[ -n "${platform}" ]]; then
+    xcodebuild_args+=(PLATFORM_NAME="${platform}")
+  fi
 
   xcrun xcodebuild "${xcodebuild_args[@]}" build
 }
