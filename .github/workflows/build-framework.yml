@@ -27,6 +27,11 @@ jobs:
       - name: Build ObjectivePGP framework
         run: make frameworks
 
+      - name: Ensure PGPApp source directory exists
+        run: |
+          mkdir -p PGPApp/Sources
+          touch PGPApp/Sources/.gitkeep
+
       - name: Install xcodegen
         run: brew install xcodegen
 
