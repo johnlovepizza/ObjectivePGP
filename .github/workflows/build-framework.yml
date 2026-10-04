@@ -1,115 +1,119 @@
-env:
-  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+name: Build IPA
 
-steps:
-  - name: Checkout code
-    uses: actions/checkout@v4
+on:
+  workflow_dispatch:
+  push:
 
-  - name: Setup Xcode
-    uses: maxim-lobanov/setup-xcode@v1
-    with:
-      xcode-version: latest-stable
+jobs:
+  build:
+    runs-on: macos-latest
 
-  - name: Patch Xcode build settings for newer toolchains
-    shell: bash
-    run: |
-      set -euxo pipefail
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
 
-      # Disable warning-as-error in the framework project
-      if [ -f ObjectivePGP.xcodeproj/project.pbxproj ]; then
-        sed -i '' 's/-Werror//g' ObjectivePGP.xcodeproj/project.pbxproj || true
-        sed -i '' 's/GCC_TREAT_WARNINGS_AS_ERRORS = YES;/GCC_TREAT_WARNINGS_AS_ERRORS = NO;/g' ObjectivePGP.xcodeproj/project.pbxproj || true
-        sed -i '' 's/PLATFORM_NAME=\"${PLATFORM_NAME}\"/PLATFORM_NAME=\"${PLATFORM_NAME}\" GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CFLAGS=\"-Wno-error -Wno-implicit-int-float-conversion\"/g' ObjectivePGP.xcodeproj/project.pbxproj || true
-      fi
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # Ensure framework build script works with modern SDKs
-      if [ -f scripts/build-frameworks.sh ]; then
-        sed -i '' 's/macosx11\.\*|macosx12\.\*|macosx13\.\*|macosx14\.\*/macosx.*/g' scripts/build-frameworks.sh || true
-        sed -i '' 's/xcrun codesign --timestamp -s \"Apple Distribution\"/# xcrun codesign --timestamp -s \"Apple Distribution\"/g' scripts/build-frameworks.sh || true
-      fi
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
 
-  - name: Build ObjectivePGP framework
-    shell: bash
-    run: |
-      set -euxo pipefail
-      make frameworks
+      - name: Fix compile-time NSTimeInterval conversions
+        shell: bash
+        run: |
+          set -euxo pipefail
 
-      echo "Frameworks directory:"
-      ls -la Frameworks
-      echo "XCFramework contents:"
-      ls -la Frameworks/ObjectivePGP.xcframework || true
+          python3 - <<'PY'
+          from pathlib import Path
 
-      # Verify it contains the iOS arm64 slice required for the app
-      if [ -f Frameworks/ObjectivePGP.xcframework/Info.plist ]; then
-        plutil -p Frameworks/ObjectivePGP.xcframework/Info.plist
-      fi
+          path = Path("ObjectivePGP/Packets/PGPSignaturePacket.m")
+          text = path.read_text()
 
-  - name: Ensure PGPApp source directory exists
-    shell: bash
-    run: |
-      set -euxo pipefail
-      mkdir -p PGPApp/Sources
-      touch PGPApp/Sources/.gitkeep
+          old = "    return [creationDate dateByAddingTimeInterval:validityPeriod.unsignedIntegerValue];"
+          new = "    return [creationDate dateByAddingTimeInterval:(NSTimeInterval)validityPeriod.unsignedIntegerValue];"
+          if old in text:
+              text = text.replace(old, new)
 
-  - name: Install xcodegen
-    shell: bash
-    run: |
-      set -euxo pipefail
-      brew install xcodegen
+          old = "    return NSNotFound;"
+          new = "    return (NSTimeInterval)NSNotFound;"
+          if old in text:
+              text = text.replace(old, new)
 
-  - name: Generate Xcode project
-    working-directory: PGPApp
-    shell: bash
-    run: |
-      set -euxo pipefail
-      xcodegen generate
-      ls -la
-      if [ ! -f PGPApp.xcodeproj/project.pbxproj ]; then
-        echo "xcodegen did not generate the app project"
-        exit 1
-      fi
+          path.write_text(text)
+          PY
 
-  - name: Build app with explicit framework linkage
-    working-directory: PGPApp
-    shell: bash
-    run: |
-      set -euxo pipefail
+      - name: Build framework
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make frameworks
 
-      xcodebuild \
-        -project PGPApp.xcodeproj \
-        -scheme PGPApp \
-        -sdk iphoneos \
-        -configuration Release \
-        -derivedDataPath build \
-        -destination 'generic/platform=iOS' \
-        CODE_SIGNING_ALLOWED=NO \
-        CODE_SIGNING_REQUIRED=NO \
-        CODE_SIGN_IDENTITY="" \
-        ONLY_ACTIVE_ARCH=NO \
-        FRAMEWORK_SEARCH_PATHS="$(pwd)/../Frameworks" \
-        OTHER_LDFLAGS="-framework ObjectivePGP" \
-        build
+      - name: Ensure app source dir exists
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p PGPApp/Sources
+          touch PGPApp/Sources/.gitkeep
 
-  - name: Create IPA with Payload
-    shell: bash
-    run: |
-      set -euxo pipefail
+      - name: Install xcodegen
+        shell: bash
+        run: |
+          set -euxo pipefail
+          brew install xcodegen
 
-      APP_PATH=$(find PGPApp/build/Build/Products/Release-iphoneos -name "*.app" | head -1)
-      if [ -z "$APP_PATH" ]; then
-        echo "No app bundle was produced"
-        find PGPApp/build -maxdepth 5 -type d | head -50
-        exit 1
-      fi
+      - name: Generate Xcode project
+        working-directory: PGPApp
+        shell: bash
+        run: |
+          set -euxo pipefail
+          xcodegen generate
+          ls -la
+          if [ ! -f PGPApp.xcodeproj/project.pbxproj ]; then
+            echo "xcodegen did not generate the app project"
+            exit 1
+          fi
 
-      mkdir -p Payload
-      cp -r "$APP_PATH" Payload/
-      zip -r PGPApp.ipa Payload/
-      echo "✅ IPA created with Payload directory"
-      ls -la Payload/
+      - name: Build app with explicit framework linkage
+        working-directory: PGPApp
+        shell: bash
+        run: |
+          set -euxo pipefail
 
-  - name: Upload IPA
-    uses: actions/upload-artifact@v4
-    with:
-      name: PGPApp-IPA
-      path: PGPApp.ipa
+          xcodebuild \
+            -project PGPApp.xcodeproj \
+            -scheme PGPApp \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ONLY_ACTIVE_ARCH=NO \
+            FRAMEWORK_SEARCH_PATHS="$(pwd)/../Frameworks" \
+            OTHER_LDFLAGS="-framework ObjectivePGP" \
+            build
+
+      - name: Create IPA
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          APP_PATH=$(find PGPApp/build/Build/Products/Release-iphoneos -name "*.app" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No app bundle was produced"
+            find PGPApp/build -maxdepth 5 -type d | head -50
+            exit 1
+          fi
+
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r PGPApp.ipa Payload/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PGPApp-IPA
+          path: PGPApp.ipa
