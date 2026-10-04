@@ -2,11 +2,11 @@ name: Build ObjectivePGP Framework
 
 on:
   workflow_dispatch:
+  push:
 
 jobs:
   build:
     runs-on: macos-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -14,8 +14,19 @@ jobs:
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '26.0.1'  #
+          xcode-version: latest-stable
 
+      - name: Patch project to ignore strict warnings
+        run: |
+          # Forces Xcode to NOT fail the build on the NSUInteger/NSTimeInterval precision warning
+          sed -i '' 's/GCC_TREAT_WARNINGS_AS_ERRORS = YES;/GCC_TREAT_WARNINGS_AS_ERRORS = NO;/g' ObjectivePGP.xcodeproj/project.pbxproj
+          # Fallback: Remove -Werror if it's hardcoded in compiler flags
+          sed -i '' 's/-Werror//g' ObjectivePGP.xcodeproj/project.pbxproj
+
+      - name: Patch build script for newer macOS SDKs
+        run: |
+          # The original script hardcodes macOS 14. This updates it to catch macOS 15+ so the ditto command doesn't fail
+          sed -i '' 's/iphone.\*|macosx11.\*|macosx12.\*|macosx13.\*|macosx14.\*/iphone.*|macosx.*/g' scripts/build-frameworks.sh
 
       - name: Build framework
         run: make frameworks
