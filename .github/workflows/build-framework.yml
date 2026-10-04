@@ -25,11 +25,13 @@ jobs:
           sed -i '' 's/GCC_TREAT_WARNINGS_AS_ERRORS = YES;/GCC_TREAT_WARNINGS_AS_ERRORS = NO;/g' ObjectivePGP.xcodeproj/project.pbxproj
           
           # 3. Inject overrides DIRECTLY into the xcodebuild command line.
-          # This forces the compiler to ignore warnings and guarantees the build succeeds.
           sed -i '' 's/PLATFORM_NAME="${PLATFORM_NAME}"/PLATFORM_NAME="${PLATFORM_NAME}" GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CFLAGS="-Wno-error -Wno-implicit-int-float-conversion"/g' scripts/build-frameworks.sh
           
           # 4. Fix the ditto crash by allowing the script to find newer macOS SDKs
           sed -i '' 's/macosx11.\*|macosx12.\*|macosx13.\*|macosx14.\*/macosx.*/g' scripts/build-frameworks.sh
+          
+          # 5. NEW: Disable the Apple Distribution codesigning step (since we don't have certs)
+          sed -i '' 's/xcrun codesign --timestamp -s "Apple Distribution"/# xcrun codesign --timestamp -s "Apple Distribution"/g' scripts/build-frameworks.sh
 
       - name: Build framework
         run: make frameworks
