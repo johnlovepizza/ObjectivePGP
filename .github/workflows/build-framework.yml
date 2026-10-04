@@ -1,4 +1,4 @@
-name: Build ObjectivePGP Framework
+name: Build IPA
 
 on:
   workflow_dispatch:
@@ -16,28 +16,50 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Patch Project and Script
+      - name: Patch build script
         run: |
-          # 1. Nuke any hardcoded -Werror from the project file text
           sed -i '' 's/-Werror//g' ObjectivePGP.xcodeproj/project.pbxproj
-          
-          # 2. Disable "Treat Warnings as Errors" in the project settings
           sed -i '' 's/GCC_TREAT_WARNINGS_AS_ERRORS = YES;/GCC_TREAT_WARNINGS_AS_ERRORS = NO;/g' ObjectivePGP.xcodeproj/project.pbxproj
-          
-          # 3. Inject overrides DIRECTLY into the xcodebuild command line.
           sed -i '' 's/PLATFORM_NAME="${PLATFORM_NAME}"/PLATFORM_NAME="${PLATFORM_NAME}" GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CFLAGS="-Wno-error -Wno-implicit-int-float-conversion"/g' scripts/build-frameworks.sh
-          
-          # 4. Fix the ditto crash by allowing the script to find newer macOS SDKs
           sed -i '' 's/macosx11.\*|macosx12.\*|macosx13.\*|macosx14.\*/macosx.*/g' scripts/build-frameworks.sh
-          
-          # 5. NEW: Disable the Apple Distribution codesigning step (since we don't have certs)
           sed -i '' 's/xcrun codesign --timestamp -s "Apple Distribution"/# xcrun codesign --timestamp -s "Apple Distribution"/g' scripts/build-frameworks.sh
 
-      - name: Build framework
+      - name: Build ObjectivePGP framework
         run: make frameworks
 
-      - name: Upload framework
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: |
+          cd PGPApp
+          xcodegen generate
+
+      - name: Build app
+        run: |
+          cd PGPApp
+          xcodebuild -project PGPApp.xcodeproj \
+            -scheme PGPApp \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ONLY_ACTIVE_ARCH=NO \
+            build
+
+      - name: Create IPA with Payload
+        run: |
+          APP_PATH=$(find PGPApp/build/Build/Products/Release-iphoneos -name "*.app" | head -1)
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r PGPApp.ipa Payload/
+          echo "✅ IPA created with Payload directory"
+          ls -la Payload/
+
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ObjectivePGP-Frameworks
-          path: Frameworks/
+          name: PGPApp-IPA
+          path: PGPApp.ipa
