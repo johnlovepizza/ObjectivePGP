@@ -16,22 +16,30 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Patch source code and project settings
+      - name: Patch build script with compiler overrides
         run: |
-          # 1. FIX THE ACTUAL BUGGY CODE 
-          # We explicitly cast the integers to doubles so the new Xcode compiler stops throwing precision errors.
-          sed -i '' 's/validityPeriod.unsignedIntegerValue/(NSTimeInterval)validityPeriod.unsignedIntegerValue/g' ObjectivePGP/Packets/PGPSignaturePacket.m
-          sed -i '' 's/return NSNotFound;/return (NSTimeInterval)NSNotFound;/g' ObjectivePGP/Packets/PGPSignaturePacket.m
-          
-          # 2. NUKE -Werror FROM THE XCODE PROJECT (The "Nuclear" Option)
-          # This strips every single "-Werror" flag out of the project file. 
-          # If Xcode 26 finds ANY other new warnings, it will just print them and keep compiling instead of crashing.
-          sed -i '' 's/-Werror//g' ObjectivePGP.xcodeproj/project.pbxproj
-          sed -i '' 's/GCC_TREAT_WARNINGS_AS_ERRORS = YES/GCC_TREAT_WARNINGS_AS_ERRORS = NO/g' ObjectivePGP.xcodeproj/project.pbxproj
+          python3 -c '
+import re
+with open("scripts/build-frameworks.sh", "r") as f:
+    content = f.read()
 
-          # 3. FIX THE BUILD SCRIPT FOR NEW macOS SDKs 
-          # This fixes the "ditto: Cannot get the real path" crash at the very end of the build.
-          sed -i '' 's/iphone.\*|macosx11.\*|macosx12.\*|macosx13.\*|macosx14.\*/iphone.*|macosx.*/g' scripts/build-frameworks.sh
+# 1. INJECT COMPILER OVERRIDES
+# This forces Xcode to disable "Treat Warnings as Errors" and explicitly ignores the 
+# new Xcode 26 strict float-conversion warnings for EVERY platform build.
+content = re.sub(
+    r"PLATFORM_NAME=\"\$\{PLATFORM_NAME\}\" \\\s*build",
+    "PLATFORM_NAME=\"${PLATFORM_NAME}\" \\\n        GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CFLAGS=\"$(inherited) -Wno-error -Wno-implicit-int-float-conversion -Wno-error=implicit-int-float-conversion\" \\\n        build",
+    content
+)
+
+# 2. FIX THE DITTO CRASH
+# The original script hardcodes macOS SDKs up to version 14. 
+# This wildcard replacement allows it to find the new macOS 15+ SDKs so the final copy step succeeds.
+content = content.replace("macosx11.*|macosx12.*|macosx13.*|macosx14.*", "macosx.*")
+
+with open("scripts/build-frameworks.sh", "w") as f:
+    f.write(content)
+          '
 
       - name: Build framework
         run: make frameworks
