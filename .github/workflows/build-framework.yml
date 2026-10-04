@@ -61,6 +61,34 @@ jobs:
                   path.write_text(text)
           PY
 
+      - name: Fix NSUInteger/float conversion warnings in NSData+compression
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("ObjectivePGP/Utils/NSData+compression.m")
+          text = path.read_text()
+          original = text
+
+          replacements = {
+              "compressed.length = (NSUInteger)(compressed.length * 1.5f);":
+                  "compressed.length = (NSUInteger)((float)compressed.length * 1.5f);",
+              "let decompressed = [NSMutableData dataWithLength:(NSUInteger)(self.length * 2.5f)];":
+                  "let decompressed = [NSMutableData dataWithLength:(NSUInteger)((float)self.length * 2.5f)];",
+              "decompressed.length = (NSUInteger)(decompressed.length * 1.5f);":
+                  "decompressed.length = (NSUInteger)((float)decompressed.length * 1.5f);",
+          }
+
+          for old, new in replacements.items():
+              text = text.replace(old, new)
+
+          if text != original:
+              path.write_text(text)
+          PY
+
       - name: Build framework
         shell: bash
         run: |
