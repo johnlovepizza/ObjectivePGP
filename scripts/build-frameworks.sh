@@ -1,77 +1,79 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-set -e
-
-BASE_PWD="$PWD"
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
-
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${SCRIPT_DIR}/.."
 PROJECT_NAME="ObjectivePGP"
-PROJECT_FILE_PATH="${PROJECT_NAME}.xcodeproj"
+PROJECT_FILE_PATH="${PROJECT_DIR}/${PROJECT_NAME}.xcodeproj"
 TARGET_NAME="${PROJECT_NAME}"
 CONFIGURATION="Release"
-BUILD_DIR=$( mktemp -d )
-SYMROOT="${BUILD_DIR}/Debug"
-OBJROOT="${BUILD_DIR}/Intermediates"
 
-PGP_FRAMEWORKS_DIR="Frameworks"
+BUILD_ROOT="$(mktemp -d)"
+trap 'rm -rf "${BUILD_ROOT}"' EXIT
 
-function platform_from_sdk () {
-    if [[ "${1}" =~ ([A-Za-z]+) ]]; then
-        echo ${BASH_REMATCH[1]}
-    fi
+platform_from_sdk() {
+  local sdk="${1}"
+
+  if [[ "${sdk}" == iphoneos* ]]; then
+    echo "iphoneos"
+    return
+  fi
+
+  if [[ "${sdk}" == iphonesimulator* ]]; then
+    echo "iphonesimulator"
+    return
+  fi
+
+  if [[ "${sdk}" == macosx* ]]; then
+    echo "macos"
+    return
+  fi
+
+  echo "${sdk}"
 }
 
-function build_framework {
-    sdk="${1}"
-    PLATFORM_NAME=$(platform_from_sdk "${sdk}")
+build_framework() {
+  local sdk="${1}"
+  local platform
+  platform="$(platform_from_sdk "${sdk}")"
 
-    xcrun xcodebuild -jobs 1 \
-        -project "${PROJECT_FILE_PATH}" \
-        -target "${TARGET_NAME}" \
-        -configuration "${CONFIGURATION}" \
-        -sdk "${sdk}" \
-        ONLY_ACTIVE_ARCH=NO \
-        BUILD_DIR="${BUILD_DIR}" \
-        SYMROOT="${SYMROOT}.${sdk}" \
-        OBJROOT="${OBJROOT}.${sdk}" \
-        PLATFORM_NAME="${PLATFORM_NAME}" \
-        build
+  xcrun xcodebuild -jobs 1 \
+    -project "${PROJECT_FILE_PATH}" \
+    -target "${TARGET_NAME}" \
+    -configuration "${CONFIGURATION}" \
+    -sdk "${sdk}" \
+    ONLY_ACTIVE_ARCH=NO \
+    BUILD_DIR="${BUILD_ROOT}" \
+    SYMROOT="${BUILD_ROOT}/symroot-${sdk}" \
+    OBJROOT="${BUILD_ROOT}/objroot-${sdk}" \
+    PLATFORM_NAME="${platform}" \
+    build
 }
 
-# Build frameworks
-SDKs=(`xcrun xcodebuild -showsdks | grep -Eo "iphone.*|macosx11.*|macosx12.*|macosx13.*|macosx14.*"`)
+SDKs=($(xcrun xcodebuild -showsdks | grep -Eo 'iphoneos|iphonesimulator|macosx[0-9.]+' | sort -u))
 for sdk in "${SDKs[@]}"; do
-    build_framework "${sdk}"
+  build_framework "${sdk}"
 done
 
+mkdir -p "${PROJECT_DIR}/Frameworks"
+rm -rf "${PROJECT_DIR}/Frameworks/${TARGET_NAME}.xcframework"
 
-# Per platform .framework
-mkdir -p "${SCRIPT_DIR}/../Frameworks/iphoneos/"
-ditto "${BUILD_DIR}/${CONFIGURATION}-iphoneos/${TARGET_NAME}.framework"      "${SCRIPT_DIR}/../Frameworks/iphoneos/${TARGET_NAME}.xcframework"
-ditto "${BUILD_DIR}/${CONFIGURATION}-iphoneos/${TARGET_NAME}.framework.dSYM" "${SCRIPT_DIR}/../Frameworks/iphoneos/${TARGET_NAME}.xcframework.dSYM"
-mkdir -p "${SCRIPT_DIR}/../Frameworks/iphonesimulator/"
-ditto "${BUILD_DIR}/${CONFIGURATION}-iphonesimulator/${TARGET_NAME}.framework"      "${SCRIPT_DIR}/../Frameworks/iphonesimulator/${TARGET_NAME}.xcframework"
-ditto "${BUILD_DIR}/${CONFIGURATION}-iphonesimulator/${TARGET_NAME}.framework.dSYM" "${SCRIPT_DIR}/../Frameworks/iphonesimulator/${TARGET_NAME}.xcframework.dSYM"
-mkdir -p "${SCRIPT_DIR}/../Frameworks/macos/"
-ditto "${BUILD_DIR}/${CONFIGURATION}/${TARGET_NAME}.framework"      "${SCRIPT_DIR}/../Frameworks/macos/${TARGET_NAME}.xcframework"
-ditto "${BUILD_DIR}/${CONFIGURATION}/${TARGET_NAME}.framework.dSYM" "${SCRIPT_DIR}/../Frameworks/macos/${TARGET_NAME}.xcframework.dSYM"
+iphoneos_framework="$(find "${BUILD_ROOT}" -path "*/Release-iphoneos/${TARGET_NAME}.framework" -type d | head -n 1)"
+iphonesim_framework="$(find "${BUILD_ROOT}" -path "*/Release-iphonesimulator/${TARGET_NAME}.framework" -type d | head -n 1)"
+macos_framework="$(find "${BUILD_ROOT}" -path "*/Release/${TARGET_NAME}.framework" -type d | head -n 1)"
 
-# XCFramework
-mkdir -p "${SCRIPT_DIR}/../Frameworks"
-rm -rf "${SCRIPT_DIR}/../Frameworks/${TARGET_NAME}.xcframework"
+if [[ -z "${iphoneos_framework}" || -z "${iphonesim_framework}" || -z "${macos_framework}" ]]; then
+  echo "Missing built framework(s):"
+  echo "iphoneos: ${iphoneos_framework:-<missing>}"
+  echo "iphonesimulator: ${iphonesim_framework:-<missing>}"
+  echo "macos: ${macos_framework:-<missing>}"
+  exit 1
+fi
+
 xcrun xcodebuild -quiet -create-xcframework \
-	-framework "${BUILD_DIR}/${CONFIGURATION}-iphoneos/${TARGET_NAME}.framework" \
-	-framework "${BUILD_DIR}/${CONFIGURATION}-iphonesimulator/${TARGET_NAME}.framework" \
-	-framework "${BUILD_DIR}/${CONFIGURATION}/${TARGET_NAME}.framework" \
-	-output "${SCRIPT_DIR}/../Frameworks/${TARGET_NAME}.xcframework"
-	
-echo "Signing xcframework"
-xcrun codesign --timestamp -s "Apple Distribution" "${SCRIPT_DIR}/../Frameworks/${TARGET_NAME}.xcframework"
+  -framework "${iphoneos_framework}" \
+  -framework "${iphonesim_framework}" \
+  -framework "${macos_framework}" \
+  -output "${PROJECT_DIR}/Frameworks/${TARGET_NAME}.xcframework"
 
-
-# No need to strip frameworks since no combined platforms in a single framework
-# cp "scripts/strip-frameworks.sh" "${IPHONE_UNIVERSAL_LIB_DIR}/${TARGET_NAME}.framework/strip-frameworks.sh"
-# cp "scripts/strip-frameworks.sh" "${PGP_FRAMEWORKS_DIR}/macosx/${TARGET_NAME}.framework/Versions/A/Resources/strip-frameworks.sh"
-
-rm -rf "${BUILD_DIR}"
-echo "done"
+echo "Framework build succeeded"
