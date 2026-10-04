@@ -1,0 +1,21 @@
+name: PGPApp
+options:
+  bundleIdPrefix: com.pgpapp
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  PGPApp:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    settings:
+      base:
+        INFOPLIST_FILE: Sources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.pgpapp.PGPApp
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
+    dependencies:
+      - framework: ../Frameworks/ObjectivePGP.xcframework
+        embed: true
