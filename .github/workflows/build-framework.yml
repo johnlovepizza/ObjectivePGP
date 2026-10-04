@@ -28,20 +28,37 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path("ObjectivePGP/Packets/PGPSignaturePacket.m")
-          text = path.read_text()
+          fixes = {
+              Path("ObjectivePGP/PGPPartialKey.m"): [
+                  (
+                      "primaryUserSelfCertificate.keyExpirationTimeInterval != NSNotFound",
+                      "primaryUserSelfCertificate.keyExpirationTimeInterval != (NSTimeInterval)NSNotFound",
+                  ),
+                  (
+                      "dateByAddingTimeInterval:validityPeriod.unsignedIntegerValue",
+                      "dateByAddingTimeInterval:(NSTimeInterval)validityPeriod.unsignedIntegerValue",
+                  ),
+              ],
+              Path("ObjectivePGP/Packets/PGPSignaturePacket.m"): [
+                  (
+                      "return [creationDate dateByAddingTimeInterval:validityPeriod.unsignedIntegerValue];",
+                      "return [creationDate dateByAddingTimeInterval:(NSTimeInterval)validityPeriod.unsignedIntegerValue];",
+                  ),
+                  (
+                      "return NSNotFound;",
+                      "return (NSTimeInterval)NSNotFound;",
+                  ),
+              ],
+          }
 
-          old = "    return [creationDate dateByAddingTimeInterval:validityPeriod.unsignedIntegerValue];"
-          new = "    return [creationDate dateByAddingTimeInterval:(NSTimeInterval)validityPeriod.unsignedIntegerValue];"
-          if old in text:
-              text = text.replace(old, new)
-
-          old = "    return NSNotFound;"
-          new = "    return (NSTimeInterval)NSNotFound;"
-          if old in text:
-              text = text.replace(old, new)
-
-          path.write_text(text)
+          for path, replacements in fixes.items():
+              text = path.read_text()
+              original = text
+              for old, new in replacements:
+                  if old in text:
+                      text = text.replace(old, new)
+              if text != original:
+                  path.write_text(text)
           PY
 
       - name: Build framework
