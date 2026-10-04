@@ -37,17 +37,20 @@ build_framework() {
   local platform
   platform="$(platform_from_sdk "${sdk}")"
 
-  xcrun xcodebuild -jobs 1 \
-    -project "${PROJECT_FILE_PATH}" \
-    -target "${TARGET_NAME}" \
-    -configuration "${CONFIGURATION}" \
-    -sdk "${sdk}" \
-    ONLY_ACTIVE_ARCH=NO \
-    BUILD_DIR="${BUILD_ROOT}" \
-    SYMROOT="${BUILD_ROOT}/symroot-${sdk}" \
-    OBJROOT="${BUILD_ROOT}/objroot-${sdk}" \
-    PLATFORM_NAME="${platform}" \
-    build
+  local -a xcodebuild_args=(
+    -jobs 1
+    -project "${PROJECT_FILE_PATH}"
+    -target "${TARGET_NAME}"
+    -configuration "${CONFIGURATION}"
+    -sdk "${sdk}"
+    PLATFORM_NAME="${platform}"
+    ONLY_ACTIVE_ARCH=NO
+    BUILD_DIR="${BUILD_ROOT}"
+    SYMROOT="${BUILD_ROOT}/symroot-${sdk}"
+    OBJROOT="${BUILD_ROOT}/objroot-${sdk}"
+  )
+
+  xcrun xcodebuild "${xcodebuild_args[@]}" build
 }
 
 SDKs=($(xcrun xcodebuild -showsdks | grep -Eo 'iphoneos|iphonesimulator|macosx[0-9.]+' | sort -u))
