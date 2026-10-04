@@ -1,55 +1,26 @@
-name: Build ObjectivePGP IPA
+name: Build ObjectivePGP Framework
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build and Rename IPA
     runs-on: macos-latest
 
     steps:
-      # 1. Download your code
-      - name: Checkout Repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Setup Xcode
-      - name: Select Xcode Version
+      - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-      # 3. Install Certificates (Required for a real IPA)
-      # You must have these secrets created in your GitHub settings!
-      
+      - name: Build framework
+        run: make frameworks
 
-      # 4. Build, Export, and Rename the IPA
-      - name: Build and Export IPA
-        run: |
-          # Step A: Archive the app
-          # Replace "YourApp" with your actual Workspace and Scheme names
-          xcodebuild clean archive \
-            -workspace YourApp.xcworkspace \
-            -scheme "YourApp" \
-            -configuration Release \
-            -archivePath $PWD/build/ObjectivePGP.xcarchive \
-            -destination generic/platform=iOS \
-            CODE_SIGNING_ALLOWED=NO
-            
-          # Step B: Export the archive to an IPA
-          xcodebuild -exportArchive \
-            -archivePath $PWD/build/ObjectivePGP.xcarchive \
-            -exportPath $PWD/build \
-            -exportOptionsPlist ExportOptions.plist
-            
-          # Step C: Rename whatever IPA was created to ObjectivePGP.ipa
-          mv $PWD/build/*.ipa $PWD/build/ObjectivePGP.ipa
-
-      # 5. Upload the final file so you can download it
-      - name: Upload ObjectivePGP IPA
+      - name: Upload framework
         uses: actions/upload-artifact@v4
         with:
-          name: ObjectivePGP-App
-          path: build/ObjectivePGP.ipa
+          name: ObjectivePGP-Frameworks
+          path: Frameworks/
