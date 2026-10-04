@@ -23,7 +23,7 @@ jobs:
 
       # 3. Install Certificates (Required for a real IPA)
       # You must have these secrets created in your GitHub settings!
-      ${{ secrets.DISTRIBUTION_CERTIFICATE_P12 }}
+      
 
       # 4. Build, Export, and Rename the IPA
       - name: Build and Export IPA
