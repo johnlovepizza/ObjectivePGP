@@ -23,11 +23,7 @@ jobs:
 
       # 3. Install Certificates (Required for a real IPA)
       # You must have these secrets created in your GitHub settings!
-      - name: Install Apple Certificates
-        uses: apple-actions/import-codesign-certs@v2
-        with:
-          p12-file-base64: ${{ secrets.DISTRIBUTION_CERTIFICATE_P12 }}
-          p12-password: ${{ secrets.P12_PASSWORD }}
+      ${{ secrets.DISTRIBUTION_CERTIFICATE_P12 }}
 
       # 4. Build, Export, and Rename the IPA
       - name: Build and Export IPA
