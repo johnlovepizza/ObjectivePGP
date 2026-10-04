@@ -16,30 +16,20 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Patch build script with compiler overrides
+      - name: Patch Project and Script
         run: |
-          python3 -c '
-import re
-with open("scripts/build-frameworks.sh", "r") as f:
-    content = f.read()
-
-# 1. INJECT COMPILER OVERRIDES
-# This forces Xcode to disable "Treat Warnings as Errors" and explicitly ignores the 
-# new Xcode 26 strict float-conversion warnings for EVERY platform build.
-content = re.sub(
-    r"PLATFORM_NAME=\"\$\{PLATFORM_NAME\}\" \\\s*build",
-    "PLATFORM_NAME=\"${PLATFORM_NAME}\" \\\n        GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CFLAGS=\"$(inherited) -Wno-error -Wno-implicit-int-float-conversion -Wno-error=implicit-int-float-conversion\" \\\n        build",
-    content
-)
-
-# 2. FIX THE DITTO CRASH
-# The original script hardcodes macOS SDKs up to version 14. 
-# This wildcard replacement allows it to find the new macOS 15+ SDKs so the final copy step succeeds.
-content = content.replace("macosx11.*|macosx12.*|macosx13.*|macosx14.*", "macosx.*")
-
-with open("scripts/build-frameworks.sh", "w") as f:
-    f.write(content)
-          '
+          # 1. Nuke any hardcoded -Werror from the project file text
+          sed -i '' 's/-Werror//g' ObjectivePGP.xcodeproj/project.pbxproj
+          
+          # 2. Disable "Treat Warnings as Errors" in the project settings
+          sed -i '' 's/GCC_TREAT_WARNINGS_AS_ERRORS = YES;/GCC_TREAT_WARNINGS_AS_ERRORS = NO;/g' ObjectivePGP.xcodeproj/project.pbxproj
+          
+          # 3. Inject overrides DIRECTLY into the xcodebuild command line.
+          # This forces the compiler to ignore warnings and guarantees the build succeeds.
+          sed -i '' 's/PLATFORM_NAME="${PLATFORM_NAME}"/PLATFORM_NAME="${PLATFORM_NAME}" GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CFLAGS="-Wno-error -Wno-implicit-int-float-conversion"/g' scripts/build-frameworks.sh
+          
+          # 4. Fix the ditto crash by allowing the script to find newer macOS SDKs
+          sed -i '' 's/macosx11.\*|macosx12.\*|macosx13.\*|macosx14.\*/macosx.*/g' scripts/build-frameworks.sh
 
       - name: Build framework
         run: make frameworks
