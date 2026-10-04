@@ -20,7 +20,7 @@ jobs:
         run: |
           sed -i '' 's/-Werror//g' ObjectivePGP.xcodeproj/project.pbxproj
           sed -i '' 's/GCC_TREAT_WARNINGS_AS_ERRORS = YES;/GCC_TREAT_WARNINGS_AS_ERRORS = NO;/g' ObjectivePGP.xcodeproj/project.pbxproj
-          sed -i '' 's/PLATFORM_NAME="${PLATFORM_NAME}"/PLATFORM_NAME="${PLATFORM_NAME}" GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CFLAGS="-Wno-error -Wno-implicit-int-float-conversion"/g' scripts/build-framework.sh
+          sed -i '' 's/PLATFORM_NAME="${PLATFORM_NAME}"/PLATFORM_NAME="${PLATFORM_NAME}" GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CFLAGS="-Wno-error -Wno-implicit-int-float-conversion"/g' scripts/build-frameworks.sh
           sed -i '' 's/macosx11.\*|macosx12.\*|macosx13.\*|macosx14.\*/macosx.*/g' scripts/build-frameworks.sh
           sed -i '' 's/xcrun codesign --timestamp -s "Apple Distribution"/# xcrun codesign --timestamp -s "Apple Distribution"/g' scripts/build-frameworks.sh
 
