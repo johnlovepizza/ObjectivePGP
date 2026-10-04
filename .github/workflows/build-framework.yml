@@ -16,16 +16,21 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Patch project to ignore strict warnings
+      - name: Patch source code and project settings
         run: |
-          # Forces Xcode to NOT fail the build on the NSUInteger/NSTimeInterval precision warning
-          sed -i '' 's/GCC_TREAT_WARNINGS_AS_ERRORS = YES;/GCC_TREAT_WARNINGS_AS_ERRORS = NO;/g' ObjectivePGP.xcodeproj/project.pbxproj
-          # Fallback: Remove -Werror if it's hardcoded in compiler flags
+          # 1. FIX THE ACTUAL BUGGY CODE 
+          # We explicitly cast the integers to doubles so the new Xcode compiler stops throwing precision errors.
+          sed -i '' 's/validityPeriod.unsignedIntegerValue/(NSTimeInterval)validityPeriod.unsignedIntegerValue/g' ObjectivePGP/Packets/PGPSignaturePacket.m
+          sed -i '' 's/return NSNotFound;/return (NSTimeInterval)NSNotFound;/g' ObjectivePGP/Packets/PGPSignaturePacket.m
+          
+          # 2. NUKE -Werror FROM THE XCODE PROJECT (The "Nuclear" Option)
+          # This strips every single "-Werror" flag out of the project file. 
+          # If Xcode 26 finds ANY other new warnings, it will just print them and keep compiling instead of crashing.
           sed -i '' 's/-Werror//g' ObjectivePGP.xcodeproj/project.pbxproj
+          sed -i '' 's/GCC_TREAT_WARNINGS_AS_ERRORS = YES/GCC_TREAT_WARNINGS_AS_ERRORS = NO/g' ObjectivePGP.xcodeproj/project.pbxproj
 
-      - name: Patch build script for newer macOS SDKs
-        run: |
-          # The original script hardcodes macOS 14. This updates it to catch macOS 15+ so the ditto command doesn't fail
+          # 3. FIX THE BUILD SCRIPT FOR NEW macOS SDKs 
+          # This fixes the "ditto: Cannot get the real path" crash at the very end of the build.
           sed -i '' 's/iphone.\*|macosx11.\*|macosx12.\*|macosx13.\*|macosx14.\*/iphone.*|macosx.*/g' scripts/build-frameworks.sh
 
       - name: Build framework
